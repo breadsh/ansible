@@ -67,6 +67,21 @@ class PullCLI(CLI):
                                  "look for a playbook based on the host's fully-qualified domain name,"
                                  'on the host hostname and finally a playbook named *local.yml*.', }
 
+    def _get_inv_cli(self):
+
+        inv_opts = ''
+        if getattr(self.options, 'inventory'):
+            for inv in self.options.inventory:
+                if isinstance(inv, list):
+                    inv_opts += " -i '%s' " % ','.join(inv)
+                elif ',' in inv or os.path.exists(inv):
+                    inv_opts += ' -i %s ' % inv
+
+        if not inv_opts:
+            inv_opts = " -i localhost, "
+
+        return inv_opts
+
     def parse(self):
         ''' create an options parser for bin/ansible '''
 
@@ -121,6 +136,9 @@ class PullCLI(CLI):
             self.options.dest = os.path.join('~/.ansible/pull', hostname)
         self.options.dest = os.path.expandvars(os.path.expanduser(self.options.dest))
 
+        if os.path.exists(self.options.dest) and not os.path.isdir(self.options.dest):
+            raise AnsibleOptionsError("%s is not a valid or accessible directory." % self.options.dest)
+
         if self.options.sleep:
             try:
                 secs = random.randint(0, int(self.options.sleep))
@@ -158,15 +176,7 @@ class PullCLI(CLI):
 
         # Attempt to use the inventory passed in as an argument
         # It might not yet have been downloaded so use localhost as default
-        inv_opts = ''
-        if getattr(self.options, 'inventory'):
-            for inv in self.options.inventory:
-                if isinstance(inv, list):
-                    inv_opts += " -i '%s' " % ','.join(inv)
-                elif ',' in inv or os.path.exists(inv):
-                    inv_opts += ' -i %s ' % inv
-        else:
-            inv_opts = "-i 'localhost,'"
+        inv_opts = self._get_inv_cli()
 
         # FIXME: enable more repo modules hg/svn?
         if self.options.module_name == 'git':
@@ -231,8 +241,7 @@ class PullCLI(CLI):
         if self.options.vault_password_files:
             for vault_password_file in self.options.vault_password_files:
                 cmd += " --vault-password-file=%s" % vault_password_file
-        if inv_opts:
-            cmd += ' %s' % inv_opts
+
         for ev in self.options.extra_vars:
             cmd += ' -e "%s"' % ev
         if self.options.ask_sudo_pass or self.options.ask_su_pass or self.options.become_ask_pass:
@@ -249,6 +258,11 @@ class PullCLI(CLI):
             cmd += ' -C'
 
         os.chdir(self.options.dest)
+
+        # redo inventory options as new files might exist now
+        inv_opts = self._get_inv_cli()
+        if inv_opts:
+            cmd += inv_opts
 
         # RUN THE PLAYBOOK COMMAND
         display.debug("running ansible-playbook to do actual work")

@@ -548,7 +548,7 @@ class AzureRMModuleBase(object):
                 self.fail("Error {0} has a provisioning state of {1}. Expecting state to be {2}.".format(
                     azure_object.name, azure_object.provisioning_state, AZURE_SUCCESS_STATE))
 
-    def get_blob_client(self, resource_group_name, storage_account_name):
+    def get_blob_client(self, resource_group_name, storage_account_name, storage_blob_type='block'):
         keys = dict()
         try:
             # Get keys from the storage account
@@ -559,7 +559,12 @@ class AzureRMModuleBase(object):
 
         try:
             self.log('Create blob service')
-            return CloudStorageAccount(storage_account_name, account_keys.keys[0].value).create_block_blob_service()
+            if storage_blob_type == 'page':
+                return CloudStorageAccount(storage_account_name, account_keys.keys[0].value).create_page_blob_service()
+            elif storage_blob_type == 'block':
+                return CloudStorageAccount(storage_account_name, account_keys.keys[0].value).create_block_blob_service()
+            else:
+                raise Exception("Invalid storage blob type defined.")
         except Exception as exc:
             self.fail("Error creating blob service client for storage account {0} - {1}".format(storage_account_name,
                                                                                                 str(exc)))
@@ -672,19 +677,6 @@ class AzureRMModuleBase(object):
 
         return self.get_poller_result(poller)
 
-    def _register(self, key):
-        try:
-            # We have to perform the one-time registration here. Otherwise, we receive an error the first
-            # time we attempt to use the requested client.
-            resource_client = self.rm_client
-            resource_client.providers.register(key)
-        except Exception as exc:
-            self.log("One-time registration of {0} failed - {1}".format(key, str(exc)))
-            self.log("You might need to register {0} using an admin account".format(key))
-            self.log(("To register a provider using the Python CLI: "
-                      "https://docs.microsoft.com/azure/azure-resource-manager/"
-                      "resource-manager-common-deployment-errors#noregisteredproviderfound"))
-
     @property
     def storage_client(self):
         self.log('Getting storage client...')
@@ -696,7 +688,6 @@ class AzureRMModuleBase(object):
                 base_url=self._cloud_environment.endpoints.resource_manager,
                 api_version='2017-06-01'
             )
-            self._register('Microsoft.Storage')
         return self._storage_client
 
     @property
@@ -710,7 +701,6 @@ class AzureRMModuleBase(object):
                 base_url=self._cloud_environment.endpoints.resource_manager,
                 api_version='2017-06-01'
             )
-            self._register('Microsoft.Network')
         return self._network_client
 
     @property
@@ -737,7 +727,6 @@ class AzureRMModuleBase(object):
                 base_url=self._cloud_environment.endpoints.resource_manager,
                 api_version='2017-03-30'
             )
-            self._register('Microsoft.Compute')
         return self._compute_client
 
     @property
@@ -750,7 +739,6 @@ class AzureRMModuleBase(object):
                 self.subscription_id,
                 base_url=self._cloud_environment.endpoints.resource_manager,
             )
-            self._register('Microsoft.Dns')
         return self._dns_client
 
     @property
@@ -763,7 +751,6 @@ class AzureRMModuleBase(object):
                 subscription_id=self.subscription_id,
                 base_url=self.base_url
             )
-            self._register('Microsoft.Web')
         return self._web_client
 
     @property
@@ -774,5 +761,4 @@ class AzureRMModuleBase(object):
                 self.azure_credentials,
                 self.subscription_id
             )
-            self._register('Microsoft.ContainerService')
         return self._containerservice_client

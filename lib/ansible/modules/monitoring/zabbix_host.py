@@ -27,33 +27,8 @@ author:
     - "Werner Dijkerman"
 requirements:
     - "python >= 2.6"
-    - zabbix-api
+    - "zabbix-api >= 0.5.3"
 options:
-    server_url:
-        description:
-            - Url of Zabbix server, with protocol (http or https).
-        required: true
-        aliases: [ "url" ]
-    login_user:
-        description:
-            - Zabbix user name, used to authenticate against the server.
-        required: true
-    login_password:
-        description:
-            - Zabbix user password.
-        required: true
-    http_login_user:
-        description:
-            - Basic Auth login
-        required: false
-        default: None
-        version_added: "2.1"
-    http_login_password:
-        description:
-            - Basic Auth password
-        required: false
-        default: None
-        version_added: "2.1"
     host_name:
         description:
             - Name of the host in Zabbix.
@@ -64,6 +39,11 @@ options:
             - Visible name of the host in Zabbix.
         required: false
         version_added: '2.3'
+    description:
+        description:
+            - Description of the host in Zabbix.
+        required: false
+        version_added: '2.5'
     host_groups:
         description:
             - List of host groups the host is part of.
@@ -94,10 +74,6 @@ options:
         required: false
         choices: ['present', 'absent']
         default: "present"
-    timeout:
-        description:
-            - The timeout of API request (seconds).
-        default: 10
     proxy:
         description:
             - The name of the Zabbix Proxy to be used
@@ -161,6 +137,9 @@ options:
         default: "yes"
         choices: [ "yes", "no" ]
         version_added: "2.0"
+
+extends_documentation_fragment:
+    - zabbix
 '''
 
 EXAMPLES = '''
@@ -172,6 +151,7 @@ EXAMPLES = '''
     login_password: password
     host_name: ExampleHost
     visible_name: ExampleName
+    description: My ExampleHost Description
     host_groups:
       - Example group1
       - Example group2
@@ -217,7 +197,6 @@ import copy
 try:
     from zabbix_api import ZabbixAPI, ZabbixAPISubClass
 
-
     # Extend the ZabbixAPI
     # Since the zabbix-api python module too old (version 1.0, no higher version so far),
     # it does not support the 'hostinterface' api calls,
@@ -225,10 +204,9 @@ try:
     class ZabbixAPIExtends(ZabbixAPI):
         hostinterface = None
 
-        def __init__(self, server, timeout, user, passwd, **kwargs):
-            ZabbixAPI.__init__(self, server, timeout=timeout, user=user, passwd=passwd)
+        def __init__(self, server, timeout, user, passwd, validate_certs, **kwargs):
+            ZabbixAPI.__init__(self, server, timeout=timeout, user=user, passwd=passwd, validate_certs=validate_certs)
             self.hostinterface = ZabbixAPISubClass(self, dict({"prefix": "hostinterface"}, **kwargs))
-
 
     HAS_ZABBIX_API = True
 except ImportError:
@@ -268,7 +246,7 @@ class Host(object):
                 template_ids.append(template_id)
         return template_ids
 
-    def add_host(self, host_name, group_ids, status, interfaces, proxy_id, visible_name, tls_connect,
+    def add_host(self, host_name, group_ids, status, interfaces, proxy_id, visible_name, description, tls_connect,
                  tls_accept, tls_psk_identity, tls_psk, tls_issuer, tls_subject):
         try:
             if self._module.check_mode:
@@ -287,6 +265,9 @@ class Host(object):
                 parameters['tls_issuer'] = tls_issuer
             if tls_subject:
                 parameters['tls_subject'] = tls_subject
+            if description:
+                parameters['description'] = description
+
             host_list = self._zapi.host.create(parameters)
             if len(host_list) >= 1:
                 return host_list['hostids'][0]
@@ -294,13 +275,13 @@ class Host(object):
             self._module.fail_json(msg="Failed to create host %s: %s" % (host_name, e))
 
     def update_host(self, host_name, group_ids, status, host_id, interfaces, exist_interface_list, proxy_id,
-                    visible_name, tls_connect, tls_accept, tls_psk_identity, tls_psk, tls_issuer, tls_subject):
+                    visible_name, description, tls_connect, tls_accept, tls_psk_identity, tls_psk, tls_issuer, tls_subject):
         try:
             if self._module.check_mode:
                 self._module.exit_json(changed=True)
             parameters = {'hostid': host_id, 'groups': group_ids, 'status': status, 'tls_connect': tls_connect,
                           'tls_accept': tls_accept}
-            if proxy_id:
+            if proxy_id >= 0:
                 parameters['proxy_hostid'] = proxy_id
             if visible_name:
                 parameters['name'] = visible_name
@@ -312,6 +293,9 @@ class Host(object):
                 parameters['tls_issuer'] = tls_issuer
             if tls_subject:
                 parameters['tls_subject'] = tls_subject
+            if description:
+                parameters['description'] = description
+
             self._zapi.host.update(parameters)
             interface_list_copy = exist_interface_list
             if interfaces:
@@ -319,7 +303,7 @@ class Host(object):
                     flag = False
                     interface_str = interface
                     for exist_interface in exist_interface_list:
-                        interface_type = interface['type']
+                        interface_type = int(interface['type'])
                         exist_interface_type = int(exist_interface['type'])
                         if interface_type == exist_interface_type:
                             # update
@@ -428,7 +412,7 @@ class Host(object):
 
     # check all the properties before link or clear template
     def check_all_properties(self, host_id, host_groups, status, interfaces, template_ids,
-                             exist_interfaces, host, proxy_id, visible_name):
+                             exist_interfaces, host, proxy_id, visible_name, description, host_name):
         # get the existing host's groups
         exist_host_groups = self.get_host_groups_by_host_id(host_id)
         if set(host_groups) != set(exist_host_groups):
@@ -448,10 +432,17 @@ class Host(object):
         if set(list(template_ids)) != set(exist_template_ids):
             return True
 
-        if host['proxy_hostid'] != proxy_id:
+        if int(host['proxy_hostid']) != int(proxy_id):
             return True
 
-        if host['name'] != visible_name:
+        # Check whether the visible_name has changed; Zabbix defaults to the technical hostname if not set.
+        if host['name'] != visible_name and host['name'] != host_name:
+            return True
+
+        # The Zabbbix API returns an empty description as an empty string
+        if description is None:
+            description = ''
+        if host['description'] != description:
             return True
 
         return False
@@ -519,6 +510,7 @@ def main():
             host_name=dict(type='str', required=True),
             http_login_user=dict(type='str', required=False, default=None),
             http_login_password=dict(type='str', required=False, default=None, no_log=True),
+            validate_certs=dict(type='bool', required=False, default=True),
             host_groups=dict(type='list', required=False),
             link_templates=dict(type='list', required=False),
             status=dict(default="enabled", choices=['enabled', 'disabled']),
@@ -534,8 +526,8 @@ def main():
             interfaces=dict(type='list', required=False),
             force=dict(type='bool', default=True),
             proxy=dict(type='str', required=False),
-            visible_name=dict(type='str', required=False)
-
+            visible_name=dict(type='str', required=False),
+            description=dict(type='str', required=False)
         ),
         supports_check_mode=True
     )
@@ -548,8 +540,10 @@ def main():
     login_password = module.params['login_password']
     http_login_user = module.params['http_login_user']
     http_login_password = module.params['http_login_password']
+    validate_certs = module.params['validate_certs']
     host_name = module.params['host_name']
     visible_name = module.params['visible_name']
+    description = module.params['description']
     host_groups = module.params['host_groups']
     link_templates = module.params['link_templates']
     inventory_mode = module.params['inventory_mode']
@@ -572,7 +566,8 @@ def main():
     zbx = None
     # login to zabbix
     try:
-        zbx = ZabbixAPIExtends(server_url, timeout=timeout, user=http_login_user, passwd=http_login_password)
+        zbx = ZabbixAPIExtends(server_url, timeout=timeout, user=http_login_user, passwd=http_login_password,
+                               validate_certs=validate_certs)
         zbx.login(login_user, login_password)
     except Exception as e:
         module.fail_json(msg="Failed to connect to Zabbix server: %s" % e)
@@ -602,7 +597,7 @@ def main():
         if proxy:
             proxy_id = host.get_proxyid_by_proxy_name(proxy)
         else:
-            proxy_id = None
+            proxy_id = 0
 
         # get host id by host name
         zabbix_host_obj = host.get_host_by_host_name(host_name)
@@ -647,11 +642,11 @@ def main():
 
             if len(exist_interfaces) > interfaces_len:
                 if host.check_all_properties(host_id, host_groups, status, interfaces, template_ids,
-                                             exist_interfaces, zabbix_host_obj, proxy_id, visible_name):
+                                             exist_interfaces, zabbix_host_obj, proxy_id, visible_name, description, host_name):
                     host.link_or_clear_template(host_id, template_ids, tls_connect, tls_accept, tls_psk_identity,
                                                 tls_psk, tls_issuer, tls_subject)
                     host.update_host(host_name, group_ids, status, host_id,
-                                     interfaces, exist_interfaces, proxy_id, visible_name, tls_connect, tls_accept,
+                                     interfaces, exist_interfaces, proxy_id, visible_name, description, tls_connect, tls_accept,
                                      tls_psk_identity, tls_psk, tls_issuer, tls_subject)
                     module.exit_json(changed=True,
                                      result="Successfully update host %s (%s) and linked with template '%s'"
@@ -660,9 +655,9 @@ def main():
                     module.exit_json(changed=False)
             else:
                 if host.check_all_properties(host_id, host_groups, status, interfaces, template_ids,
-                                             exist_interfaces_copy, zabbix_host_obj, proxy_id, visible_name):
+                                             exist_interfaces_copy, zabbix_host_obj, proxy_id, visible_name, host_name):
                     host.update_host(host_name, group_ids, status, host_id, interfaces, exist_interfaces, proxy_id,
-                                     visible_name, tls_connect, tls_accept, tls_psk_identity, tls_psk, tls_issuer,
+                                     visible_name, description, tls_connect, tls_accept, tls_psk_identity, tls_psk, tls_issuer,
                                      tls_subject)
                     host.link_or_clear_template(host_id, template_ids, tls_connect, tls_accept, tls_psk_identity,
                                                 tls_psk, tls_issuer, tls_subject)
@@ -690,7 +685,7 @@ def main():
             module.fail_json(msg="Specify at least one interface for creating host '%s'." % host_name)
 
         # create host
-        host_id = host.add_host(host_name, group_ids, status, interfaces, proxy_id, visible_name, tls_connect,
+        host_id = host.add_host(host_name, group_ids, status, interfaces, proxy_id, visible_name, description, tls_connect,
                                 tls_accept, tls_psk_identity, tls_psk, tls_issuer, tls_subject)
         host.link_or_clear_template(host_id, template_ids, tls_connect, tls_accept, tls_psk_identity,
                                     tls_psk, tls_issuer, tls_subject)

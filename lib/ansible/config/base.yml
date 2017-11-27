@@ -1,101 +1,6 @@
 # Copyright (c) 2017 Ansible Project
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 ---
-ACCELERATE_CONNECT_TIMEOUT:
-  default: 1.0
-  description:
-    - "This setting controls the timeout for the socket connect call, and should be kept relatively low.
-      The connection to the accelerate_port will be attempted 3 times before Ansible will fall back to ssh or paramiko
-      (depending on your default connection setting) to try and start the accelerate daemon remotely."
-    - "Note, this value can be set to less than one second, however it is probably not a good idea to do so
-      unless you are on a very fast and reliable LAN. If you are connecting to systems over the internet, it may be necessary to increase this timeout."
-  env: [{name: ACCELERATE_CONNECT_TIMEOUT }]
-  ini:
-  - {key: accelerate_connect_timeout, section: accelerate}
-  type: float
-  deprecated:
-    why: Removing accelerate as a connection method, settings not needed either.
-    version: "2.5"
-    alternatives: ssh and paramiko
-  version_added: "1.4"
-ACCELERATE_DAEMON_TIMEOUT:
-  default: 30
-  description:
-    - This setting controls the timeout for the accelerated daemon, as measured in minutes. The default daemon timeout is 30 minutes.
-    - "Prior to 1.6, the timeout was hard-coded from the time of the daemon's launch."
-    - For version 1.6+, the timeout is now based on the last activity to the daemon and is configurable via this option.
-  env: [{name: ACCELERATE_DAEMON_TIMEOUT}]
-  ini:
-  - {key: accelerate_daemon_timeout, section: accelerate}
-  type: integer
-  deprecated:
-    why: Removing accelerate as a connection method, settings not needed either.
-    version: "2.5"
-    alternatives: ssh and paramiko
-  version_added: "1.6"
-ACCELERATE_KEYS_DIR:
-  default: ~/.fireball.keys
-  description: ''
-  deprecated:
-    why: Removing accelerate as a connection method, settings not needed either.
-    version: "2.5"
-    alternatives: ssh and paramiko
-  env: [{name: ACCELERATE_KEYS_DIR}]
-  ini:
-  - {key: accelerate_keys_dir, section: accelerate}
-ACCELERATE_KEYS_DIR_PERMS:
-  default: '700'
-  description: 'TODO: write it'
-  env: [{name: ACCELERATE_KEYS_DIR_PERMS}]
-  ini:
-  - {key: accelerate_keys_dir_perms, section: accelerate}
-  deprecated:
-    why: Removing accelerate as a connection method, settings not needed either.
-    version: "2.5"
-    alternatives: ssh and paramiko
-ACCELERATE_KEYS_FILE_PERMS:
-  default: '600'
-  description: 'TODO: write it'
-  env: [{name: ACCELERATE_KEYS_FILE_PERMS}]
-  ini:
-  - {key: accelerate_keys_file_perms, section: accelerate}
-  deprecated:
-    why: Removing accelerate as a connection method, settings not needed either.
-    version: "2.5"
-    alternatives: ssh and paramiko
-ACCELERATE_MULTI_KEY:
-  default: False
-  description: 'TODO: write it'
-  env: [{name: ACCELERATE_MULTI_KEY}]
-  ini:
-  - {key: accelerate_multi_key, section: accelerate}
-  type: boolean
-  deprecated:
-    why: Removing accelerate as a connection method, settings not needed either.
-    version: "2.5"
-    alternatives: ssh and paramiko
-ACCELERATE_PORT:
-  default: 5099
-  description: 'TODO: write it'
-  env: [{name: ACCELERATE_PORT}]
-  ini:
-  - {key: accelerate_port, section: accelerate}
-  type: integer
-  deprecated:
-    why: Removing accelerate as a connection method, settings not needed either.
-    version: "2.5"
-    alternatives: ssh and paramiko
-ACCELERATE_TIMEOUT:
-  default: 30
-  description: 'TODO: write it'
-  env: [{name: ACCELERATE_TIMEOUT}]
-  ini:
-  - {key: accelerate_timeout, section: accelerate}
-  type: integer
-  deprecated:
-    why: Removing accelerate as a connection method, settings not needed either.
-    version: "2.5"
-    alternatives: ssh and paramiko
 ALLOW_WORLD_READABLE_TMPFILES:
   name: Allow world readable temporary files
   default: False
@@ -160,9 +65,14 @@ ANSIBLE_PIPELINING:
     - This can result in a very significant performance improvement when enabled.
     - "However this conflicts with privilege escalation (become). For example, when using 'sudo:' operations you must first
       disable 'requiretty' in /etc/sudoers on all managed hosts, which is why it is disabled by default."
-  env: [{name: ANSIBLE_PIPELINING}]
+  env:
+    - name: ANSIBLE_PIPELINING
+    - name: ANSIBLE_SSH_PIPELINING
   ini:
-  - {key: pipelining, section: connection}
+  - section: connection
+    key: pipelining
+  - section: ssh_connection
+    key: pipelining
   type: boolean
   yaml: {key: plugins.connection.pipelining}
 ANSIBLE_SSH_ARGS:
@@ -210,19 +120,6 @@ ANSIBLE_SSH_EXECUTABLE:
   - {key: ssh_executable, section: ssh_connection}
   yaml: {key: ssh_connection.ssh_executable}
   version_added: "2.2"
-ANSIBLE_SSH_PIPELINING:
-  # TODO: move to ssh plugin
-  default: False
-  description:
-    - Pipelining reduces the number of SSH operations required to execute a module on the remote server,
-      by executing many Ansible modules without actual file transfer.
-    - This can result in a very significant performance improvement when enabled.
-    - "However this conflicts with privilege escalation (become). For example, when using 'sudo:' operations you must first disable 'requiretty' in /etc/sudoers on all managed hosts, which is why it is disabled by default."
-  env: [{name: ANSIBLE_SSH_PIPELINING}]
-  ini:
-  - {key: pipelining, section: ssh_connection}
-  type: boolean
-  yaml: {key: ssh_connection.pipelining}
 ANSIBLE_SSH_RETRIES:
   # TODO: move to ssh plugin
   default: 0
@@ -495,7 +392,7 @@ DEFAULT_BECOME_EXE:
   - {key: become_exe, section: privilege_escalation}
 DEFAULT_BECOME_FLAGS:
   name: Set 'become' executable options
-  default: ~
+  default: ''
   description: Flags to pass to the privilege escalation executable.
   env: [{name: ANSIBLE_BECOME_FLAGS}]
   ini:
@@ -818,7 +715,7 @@ DEFAULT_MODULE_COMPRESSION:
 #   - name: ansible_module_compression
 DEFAULT_MODULE_LANG:
   name: Target language environment
-  default: eval(os.getenv('LANG', 'en_US.UTF-8'))
+  default: "{{CONTROLER_LANG}}"
   description: "Language locale setting to use for modules when they execute on the target, if empty it defaults to 'en_US.UTF-8'"
   env: [{name: ANSIBLE_MODULE_LANG}]
   ini:
@@ -1096,7 +993,7 @@ DEFAULT_SU_EXE:
   - {key: su_exe, section: defaults}
 DEFAULT_SU_FLAGS:
   name: su flags
-  default: ~
+  default: ''
   deprecated:
     why: In favor of become which is a generic framework
     version: "2.8"
@@ -1350,7 +1247,7 @@ INVENTORY_ENABLED:
   type: list
 INVENTORY_IGNORE_EXTS:
   name: Inventory ignore extensions
-  default: eval(BLACKLIST_EXTS + ( '~', '.orig', '.ini', '.cfg', '.retry'))
+  default: "{{(BLACKLIST_EXTS + ( '~', '.orig', '.ini', '.cfg', '.retry'))}}"
   description: List of extensions to ignore when using a directory as an inventory source
   env: [{name: ANSIBLE_INVENTORY_IGNORE}]
   ini:
@@ -1396,7 +1293,7 @@ MERGE_MULTIPLE_CLI_TAGS:
   version_added: "2.3"
 NETWORK_GROUP_MODULES:
   name: Network module families
-  default: [eos, nxos, ios, iosxr, junos, ce, vyos, sros, dellos9, dellos10, dellos6, asa, aruba, aireos]
+  default: [eos, nxos, ios, iosxr, junos, enos, ce, vyos, sros, dellos9, dellos10, dellos6, asa, aruba, aireos, bigip, ironware]
   description: 'TODO: write it'
   env: [{name: NETWORK_GROUP_MODULES}]
   ini:
@@ -1487,6 +1384,19 @@ PERSISTENT_COMMAND_TIMEOUT:
   ini:
   - {key: command_timeout, section: persistent_connection}
   type: int
+PLAYBOOK_VARS_ROOT:
+  name: playbook vars files root
+  default: top
+  version_added: "2.4.1"
+  description:
+    - This sets which playbook dirs will be used as a root to process vars plugins, which includes finding host_vars/group_vars
+    - The ``top`` option follows the traditional behaviour of using the top playbook in the chain to find the root directory.
+    - The ``bottom`` option follows the 2.4.0 behaviour of using the current playbook to find the root directory.
+    - The ``all`` option examines from the first parent to the current playbook.
+  env: [{name: ANSIBLE_PLAYBOOK_VARS_ROOT}]
+  ini:
+  - {key: playbook_vars_root, section: defaults}
+  choices: [ top, bottom, all ]
 RETRY_FILES_ENABLED:
   name: Retry files
   default: True
@@ -1531,6 +1441,22 @@ SYSTEM_WARNINGS:
   ini:
   - {key: system_warnings, section: defaults}
   type: boolean
+TAGS_RUN:
+  name: Run Tags
+  default: []
+  type: list
+  description: default list of tags to run in your plays, Skip Tags has precedence.
+  env: [{name: ANSIBLE_RUN_TAGS}]
+  ini:
+  - {key: run, section: tags}
+TAGS_SKIP:
+  name: Skip Tags
+  default: []
+  type: list
+  description: default list of tags to skip in your plays, has precedence over Run Tags
+  env: [{name: ANSIBLE_SKIP_TAGS}]
+  ini:
+  - {key: skip, section: tags}
 USE_PERSISTENT_CONNECTIONS:
   name: Persistence
   default: False
@@ -1557,7 +1483,7 @@ YAML_FILENAME_EXTENSIONS:
   env:
     - name: ANSIBLE_YAML_FILENAME_EXT
   ini:
-    - section: yaml_valid_extensions
-      key: defaults
+    - section: defaults
+      key: yaml_valid_extensions
   type: list
 ...

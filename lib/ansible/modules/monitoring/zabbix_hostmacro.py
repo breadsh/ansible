@@ -27,31 +27,6 @@ requirements:
     - "python >= 2.6"
     - zabbix-api
 options:
-    server_url:
-        description:
-            - Url of Zabbix server, with protocol (http or https).
-        required: true
-        aliases: [ "url" ]
-    login_user:
-        description:
-            - Zabbix user name.
-        required: true
-    login_password:
-        description:
-            - Zabbix user password.
-        required: true
-    http_login_user:
-        description:
-            - Basic Auth login
-        required: false
-        default: None
-        version_added: "2.1"
-    http_login_password:
-        description:
-            - Basic Auth password
-        required: false
-        default: None
-        version_added: "2.1"
     host_name:
         description:
             - Name of the host.
@@ -72,10 +47,9 @@ options:
         required: false
         choices: ['present', 'absent']
         default: "present"
-    timeout:
-        description:
-            - The timeout of API request (seconds).
-        default: 10
+
+extends_documentation_fragment:
+    - zabbix
 '''
 
 EXAMPLES = '''
@@ -148,7 +122,7 @@ class HostMacro(object):
     # update host macro
     def update_host_macro(self, host_macro_obj, macro_name, macro_value):
         host_macro_id = host_macro_obj['hostmacroid']
-        if host_macro_obj['macro'] == '{$'+macro_name+'}' and host_macro_obj['value'] == macro_value:
+        if host_macro_obj['macro'] == '{$' + macro_name + '}' and host_macro_obj['value'] == macro_value:
             self._module.exit_json(changed=False, result="Host macro %s already up to date" % macro_name)
         try:
             if self._module.check_mode:
@@ -169,6 +143,7 @@ class HostMacro(object):
         except Exception as e:
             self._module.fail_json(msg="Failed to delete host macro %s: %s" % (macro_name, e))
 
+
 def main():
     module = AnsibleModule(
         argument_spec=dict(
@@ -177,6 +152,7 @@ def main():
             login_password=dict(type='str', required=True, no_log=True),
             http_login_user=dict(type='str', required=False, default=None),
             http_login_password=dict(type='str', required=False, default=None, no_log=True),
+            validate_certs=dict(type='bool', required=False, default=True),
             host_name=dict(type='str', required=True),
             macro_name=dict(type='str', required=True),
             macro_value=dict(type='str', required=True),
@@ -194,8 +170,9 @@ def main():
     login_password = module.params['login_password']
     http_login_user = module.params['http_login_user']
     http_login_password = module.params['http_login_password']
+    validate_certs = module.params['validate_certs']
     host_name = module.params['host_name']
-    macro_name  = (module.params['macro_name']).upper()
+    macro_name = (module.params['macro_name']).upper()
     macro_value = module.params['macro_value']
     state = module.params['state']
     timeout = module.params['timeout']
@@ -203,7 +180,8 @@ def main():
     zbx = None
     # login to zabbix
     try:
-        zbx = ZabbixAPIExtends(server_url, timeout=timeout, user=http_login_user, passwd=http_login_password)
+        zbx = ZabbixAPIExtends(server_url, timeout=timeout, user=http_login_user, passwd=http_login_password,
+                               validate_certs=validate_certs)
         zbx.login(login_user, login_password)
     except Exception as e:
         module.fail_json(msg="Failed to connect to Zabbix server: %s" % e)

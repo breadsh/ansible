@@ -29,47 +29,21 @@ requirements:
     - "python >= 2.6"
     - zabbix-api
 options:
-    server_url:
-        description:
-            - Url of Zabbix server, with protocol (http or https).
-              C(url) is an alias for C(server_url).
-        required: true
-        aliases: [ "url" ]
-    login_user:
-        description:
-            - Zabbix user name.
-        required: true
-    login_password:
-        description:
-            - Zabbix user password.
-        required: true
-    http_login_user:
-        description:
-            - Basic Auth login
-        required: false
-        default: None
-        version_added: "2.1"
-    http_login_password:
-        description:
-            - Basic Auth password
-        required: false
-        default: None
-        version_added: "2.1"
     state:
         description:
             - Create or delete host group.
         required: false
         default: "present"
         choices: [ "present", "absent" ]
-    timeout:
-        description:
-            - The timeout of API request(seconds).
-        default: 10
     host_groups:
         description:
             - List of host groups to create or delete.
         required: true
         aliases: [ "host_group" ]
+
+extends_documentation_fragment:
+    - zabbix
+
 notes:
     - Too many concurrent updates to the same group may cause Zabbix to return errors, see examples for a workaround if needed.
 '''
@@ -161,10 +135,11 @@ def main():
             server_url=dict(type='str', required=True, aliases=['url']),
             login_user=dict(type='str', required=True),
             login_password=dict(type='str', required=True, no_log=True),
-            http_login_user=dict(type='str',required=False, default=None),
-            http_login_password=dict(type='str',required=False, default=None, no_log=True),
+            http_login_user=dict(type='str', required=False, default=None),
+            http_login_password=dict(type='str', required=False, default=None, no_log=True),
+            validate_certs=dict(type='bool', required=False, default=True),
             host_groups=dict(type='list', required=True, aliases=['host_group']),
-            state=dict(default="present", choices=['present','absent']),
+            state=dict(default="present", choices=['present', 'absent']),
             timeout=dict(type='int', default=10)
         ),
         supports_check_mode=True
@@ -178,6 +153,7 @@ def main():
     login_password = module.params['login_password']
     http_login_user = module.params['http_login_user']
     http_login_password = module.params['http_login_password']
+    validate_certs = module.params['validate_certs']
     host_groups = module.params['host_groups']
     state = module.params['state']
     timeout = module.params['timeout']
@@ -186,7 +162,8 @@ def main():
 
     # login to zabbix
     try:
-        zbx = ZabbixAPI(server_url, timeout=timeout, user=http_login_user, passwd=http_login_password)
+        zbx = ZabbixAPI(server_url, timeout=timeout, user=http_login_user, passwd=http_login_password,
+                        validate_certs=validate_certs)
         zbx.login(login_user, login_password)
     except Exception as e:
         module.fail_json(msg="Failed to connect to Zabbix server: %s" % e)

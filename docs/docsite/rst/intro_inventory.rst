@@ -82,10 +82,11 @@ In YAML:
 
 .. code-block:: yaml
 
-    hosts:
-      jumper:
-        ansible_port: 5555
-        ansible_host: 192.0.2.50
+    ...
+      hosts:
+        jumper:
+          ansible_port: 5555
+          ansible_host: 192.0.2.50
 
 In the above example, trying to ansible against the host alias "jumper" (which may not even be a real hostname) will contact 192.0.2.50 on port 5555.
 Note that this is using a feature of the inventory file to define some special variables.
@@ -477,7 +478,7 @@ Here is an example of how to instantly deploy to created containers::
    :doc:`intro_adhoc`
        Examples of basic commands
    :doc:`playbooks`
-       Learning Ansible’s configuration, deployment, and orchestration language.
+       Learning Ansible's configuration, deployment, and orchestration language.
    `Mailing List <http://groups.google.com/group/ansible-project>`_
        Questions? Help? Ideas?  Stop by the list on Google Groups
    `irc.freenode.net <http://irc.freenode.net>`_

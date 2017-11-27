@@ -607,6 +607,9 @@ class ActionBase(with_metaclass(ABCMeta, object)):
         # give the module the socket for persistent connections
         module_args['_ansible_socket'] = task_vars.get('ansible_socket')
 
+        # make sure all commands use the designated shell executable
+        module_args['_ansible_shell_executable'] = self._play_context.executable
+
     def _execute_module(self, module_name=None, module_args=None, tmp=None, task_vars=None, persist_files=False, delete_remote_tmp=True, wrap_async=False):
         '''
         Transfer and run a module along with its arguments.
@@ -721,11 +724,6 @@ class ActionBase(with_metaclass(ABCMeta, object)):
                     rm_tmp = tmp
 
             cmd = self._connection._shell.build_module_command(environment_string, shebang, cmd, arg_path=args_file_path, rm_tmp=rm_tmp).strip()
-
-            if module_name == "accelerate":
-                # always run the accelerate module as the user
-                # specified in the play, not the sudo_user
-                sudoable = False
 
         # Fix permissions of the tmp path and tmp files. This should be called after all files have been transferred.
         if remote_files:

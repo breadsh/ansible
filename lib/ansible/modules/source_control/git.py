@@ -371,10 +371,9 @@ fi
 
 def set_git_ssh(ssh_wrapper, key_file, ssh_opts):
 
-    # git_ssh_command will override git_ssh, so only older git needs it
+    if os.environ.get("GIT_SSH"):
+        del os.environ["GIT_SSH"]
     os.environ["GIT_SSH"] = ssh_wrapper
-    # using shell to avoid 'noexec' issues if module temp dir is located in such a mount
-    os.environ["GIT_SSH_COMMAND"] = '%s %s' % (os.environ.get('SHELL', '/bin/sh'), ssh_wrapper)
 
     if os.environ.get("GIT_KEY"):
         del os.environ["GIT_KEY"]
@@ -456,9 +455,8 @@ def clone(git_path, module, repo, dest, remote, depth, version, bare,
         cmd.extend(['--reference', str(reference)])
     cmd.extend([repo, dest])
     module.run_command(cmd, check_rc=True, cwd=dest_dirname)
-    if bare:
-        if remote != 'origin':
-            module.run_command([git_path, 'remote', 'add', remote, repo], check_rc=True, cwd=dest)
+    if bare and remote != 'origin':
+        module.run_command([git_path, 'remote', 'add', remote, repo], check_rc=True, cwd=dest)
 
     if refspec:
         cmd = [git_path, 'fetch']
@@ -944,13 +942,13 @@ def create_archive(git_path, module, dest, archive, version, repo, result):
             result.update(changed=False)
             # Cleanup before exiting
             try:
-                shutil.remove(tempdir)
+                shutil.rmtree(tempdir)
             except OSError:
                 pass
         else:
             try:
                 shutil.move(new_archive, archive)
-                shutil.remove(tempdir)
+                shutil.rmtree(tempdir)
                 result.update(changed=True)
             except OSError as e:
                 module.fail_json(msg="Failed to move %s to %s" %
@@ -1068,7 +1066,6 @@ def main():
     result.update(before=None)
 
     local_mods = False
-    need_fetch = True
     if (dest and not os.path.exists(gitconfig)) or (not dest and not allow_clone):
         # if there is no git configuration, do a clone operation unless:
         # * the user requested no clone (they just want info)
@@ -1084,7 +1081,6 @@ def main():
             module.exit_json(**result)
         # there's no git config, so clone
         clone(git_path, module, repo, dest, remote, depth, version, bare, reference, refspec, verify_commit)
-        need_fetch = False
     elif not update:
         # Just return having found a repo already in the dest path
         # this does no checking that the repo is the actual repo
